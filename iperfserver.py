@@ -16,4 +16,4 @@ def parse_servers(filename):
             entry["IP/HOST"],
             entry["PORT"],
             entry["OPTIONS"]
-        )
+        ))
