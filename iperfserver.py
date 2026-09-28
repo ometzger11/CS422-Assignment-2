@@ -17,3 +17,5 @@ def parse_servers(filename):
             entry["PORT"],
             entry["OPTIONS"]
         ))
+
+    return servers
