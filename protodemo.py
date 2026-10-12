@@ -36,7 +36,7 @@ print(f"Got: {received[0]:#x}")
 if received[0] == 0x09:
     print("Ready to exchange parameters")
 else:
-    exit("Server said something invalid")
+    exit("Server said something invalid (1)")
 
 # Send the pre-JSON length specifier
 ctrlsock.sendall(bytes([0x00, 0x00, 0x00, 0x7c]))
@@ -48,3 +48,38 @@ ctrlsock.sendall(PARAMS.encode())
 received = ctrlsock.recv(1)
 
 print(f"Got: {received[0]:#x}")
+
+if received[0] == 0x0a:
+    print("Ready to create streams")
+else:
+    exit("Server said something invalid (2)")
+
+# Create data (DATA) socket and connect
+datasock = socket.socket()
+datasock.connect((SERV_ADDR, SERV_PORT))
+
+# Send the same cookie as before to identify our session
+datasock.sendall(sid)
+
+# Receive a third state update on CTRL (!)
+received = ctrlsock.recv(1)
+
+print(f"Got: {received[0]:#x}")
+
+if received[0] == 0x01:
+    print("Server wants to start test")
+else:
+    exit("Server said something invalid (3)")
+
+# Receive a fourth state update on CTRL
+received = ctrlsock.recv(1)
+
+print(f"Got: {received[0]:#x}")
+
+if received[0] == 0x02:
+    print("Server considers test to be running")
+else:
+    exit("Server said something invalid (4)")
+
+ctrlsock.close()
+#datasock.close() # iperf3 doesn't do this ???
