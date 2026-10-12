@@ -12,6 +12,8 @@ def generate_cookie():
     for i in range(NUM_CHARS):
         chips.append(CHARSET[random.randint(low, high)])
 
+    chips.append('\0')
+
     return "".join(chips)
 
 if __name__ == "__main__":

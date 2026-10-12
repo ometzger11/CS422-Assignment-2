@@ -20,3 +20,11 @@ ctrlsock.connect((SERV_ADDR, SERV_PORT))
 
 # Send the coookie to the server over the CTRL connection
 ctrlsock.sendall(sid)
+
+# Receive a state update from the server
+received = ctrlsock.recv(1)
+
+if len(received) == 0:
+    exit("Uh-oh. We got disconnected")
+
+print(f"Got: {received[0]:#x}")
