@@ -4,7 +4,12 @@ import cookie
 SERV_ADDR = "speedtest.chi11.us.leaseweb.net"
 SERV_PORT = 5201
 
-PARAMS = '{"tcp":true,"omit":0,"time":10,"num":0,"blockcount":0,' + \
+###
+### FIXME:  Changing this without manually changing the length
+###         specifier in the code will cause breakage (unless
+###         the number of bytes remains unaffected)
+###
+PARAMS = '{"tcp":true,"omit":0,"time":0,"num":4194304,"blockcount":0,' + \
          '"parallel":1,"len":131072,"pacing_timer":1000,' + \
          '"client_version":"3.16"}'
 
@@ -39,7 +44,7 @@ else:
     exit("Server said something invalid (1)")
 
 # Send the pre-JSON length specifier
-ctrlsock.sendall(bytes([0x00, 0x00, 0x00, 0x7c]))
+ctrlsock.sendall(bytes([0x00, 0x00, 0x00, 0x81]))
 
 # Send the parameters as JSON
 ctrlsock.sendall(PARAMS.encode())
@@ -81,5 +86,5 @@ if received[0] == 0x02:
 else:
     exit("Server said something invalid (4)")
 
+datasock.close()
 ctrlsock.close()
-#datasock.close() # iperf3 doesn't do this ???
