@@ -1,3 +1,4 @@
+import random
 import socket
 import cookie
 
@@ -7,7 +8,10 @@ SERV_PORT = 5201
 ###
 ### FIXME:  Changing this without manually changing the length
 ###         specifier in the code will cause breakage (unless
-###         the number of bytes remains unaffected)
+###         the number of bytes remains unaffected).
+###
+###         If you change "num", you also have to change the
+###         number of bytes in the randomly generated data block.
 ###
 PARAMS = '{"tcp":true,"omit":0,"time":0,"num":4194304,"blockcount":0,' + \
          '"parallel":1,"len":131072,"pacing_timer":1000,' + \
@@ -18,10 +22,17 @@ PARAMS = '{"tcp":true,"omit":0,"time":0,"num":4194304,"blockcount":0,' + \
 ###         disabling Nagle's algorithm? The official iperf3
 ###         implementation seems to do this...
 ###
+###         TCP_NODELAY is probably desirable for the control
+###         connection, but the official implementation doesn't
+###         seem to use it for the data connection.
+###
 
 # Generate a token that identifies our iperf3 session
 # (and encode it as a UTF-8 bytestring)
 sid = cookie.generate_cookie().encode()
+
+# Create some garbage data to send
+data = random.randbytes(4194304)
 
 # Create control (CTRL) socket and connect
 ctrlsock = socket.socket()
@@ -86,5 +97,31 @@ if received[0] == 0x02:
 else:
     exit("Server said something invalid (4)")
 
+# Send all data
+
+# TODO: Eventually, we may want to refactor this into
+# a loop that calls normal send() repeatedly instead of
+# sendall(), because that would allow periodic tracking
+# of progress/stats when a large transfer takes multiple
+# seconds to complete.
+print("About to send all data...")
+datasock.sendall(data)
+print("Done sending data")
+
+# Send a state update on CTRL ending the test
+print("Sending end-of-test")
+ctrlsock.sendall((0x04).to_bytes())
+
+# Receive a fifth state update on CTRL
+received = ctrlsock.recv(1)
+
+print(f"Got: {received[0]:#x}")
+
+if received[0] == 0x0d:
+    print("Server is ready to exchange results")
+else:
+    exit("Server said something invalid (5)")
+
+# Clean up
 datasock.close()
 ctrlsock.close()
