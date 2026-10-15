@@ -102,6 +102,30 @@ def recv_state(sock, expected):
     raise IperfError(f"Server said something invalid "
                      f"(got {state:#x}, expected {expected:#x})")
 
+# Send a bytestring of variable length by first sending an
+# integer specifying the length followed by the encoded
+# string itself.
+#
+# The argument should be a bytes object (not a
+# conventional Python string)
+def send_varbytes(sock, bytestring):
+    # Length indicator is 32-bit (4 bytes) and
+    # must be big-endian
+    length = len(bytestring)
+    length_bstr = length.to_bytes(4, "big")
+    
+    sock.sendall(length_bstr)
+    sock.sendall(bytestring)
+
+# Send an ordinary Python string of variable length by
+# first sending an integer specifying the length followed
+# by the UTF-8 encoding of the string.
+#
+# For dumb bytes or strings of different encodings, see
+# send_varbytes() above.
+def send_varstr(sock, pystring):
+    send_varbytes(sock, pystring.encode())
+
 # Open a TCP socket and connect to address and port.
 # A timeout is used for the connection. See the constant
 # CONNECT_TIMEOUT above.
@@ -135,12 +159,9 @@ try:
     # Receive a state update from the server
     recv_state(ctrlsock, 0x09)
     print("Ready to exchange parameters")
-
-    # Send the pre-JSON length specifier
-    ctrlsock.sendall(bytes([0x00, 0x00, 0x00, 0x81]))
-
+    
     # Send the parameters as JSON
-    ctrlsock.sendall(PARAMS.encode())
+    send_varstr(ctrlsock, PARAMS)
 
     # Receive another state update (a server that rejects
     # our parameters answers with SERVER_ERROR or hangs up)
