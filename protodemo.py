@@ -42,10 +42,20 @@ PARAMS = '{"tcp":true,"omit":0,"time":0,"num":4194304,"blockcount":0,' + \
 ###
 
 
+# Type of exception raised when iperf3 server does
+# something bad
 class IperfError(Exception):
     pass
 
 
+# Receive an exact number of bytes from the socket.
+#
+# Blocks until the desired length is met by incoming
+# data. When the data is available, it is returned as
+# as a bytes object.
+#
+# If the connection is closed before n bytes can be
+# received, an IperfError exception is raised.
 def recv_exact(sock, n):
     # recv() may return fewer bytes than asked for, and returns
     # b"" once the peer has closed the connection
@@ -57,7 +67,16 @@ def recv_exact(sock, n):
         buf += chunk
     return bytes(buf)
 
-
+# Get a state update from the server (blocking).
+#
+# If the server sets the state to the expected state,
+# nothing happens, and None is returned.
+#
+# If the server encounters an errorr or unilaterally
+# terminates the test, an IperfError is raised.
+#
+# An IperfError is also raised if the state update
+# is valid, but does not match expected.
 def recv_state(sock, expected):
     state = recv_exact(sock, 1)[0]
 
@@ -83,7 +102,12 @@ def recv_state(sock, expected):
     raise IperfError(f"Server said something invalid "
                      f"(got {state:#x}, expected {expected:#x})")
 
-
+# Open a TCP socket and connect to address and port.
+# A timeout is used for the connection. See the constant
+# CONNECT_TIMEOUT above.
+#
+# Exceptions from socket module are allowed to propagate
+# on failure.
 def connect(addr, port):
     sock = socket.create_connection((addr, port), timeout=CONNECT_TIMEOUT)
     sock.settimeout(IO_TIMEOUT)
@@ -97,6 +121,7 @@ sid = cookie.generate_cookie().encode()
 # Create some garbage data to send
 data = random.randbytes(4194304)
 
+# Sockets for control and data streams
 ctrlsock = None
 datasock = None
 
