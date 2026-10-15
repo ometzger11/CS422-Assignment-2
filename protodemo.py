@@ -59,7 +59,7 @@ def recv_exact(sock, n):
 
 
 def recv_state(sock, expected):
-    state = struct.unpack("b", recv_exact(sock, 1))[0]
+    state = recv_exact(sock, 1)[0]
 
     print(f"Got: {state:#x}")
 
