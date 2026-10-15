@@ -32,6 +32,18 @@ PARAMS = '{"tcp":true,"omit":0,"time":0,"num":4194304,"blockcount":0,' + \
          '"client_version":"3.16"}'
 
 ###
+### FIXME: This is fudged data. We may be able to get real
+###        values for some fields, but others are just going
+###        to be reasonable pretend values to make the server
+###        happy.
+###
+RESULTS = '{"cpu_util_total":53.2998321894476,"cpu_util_user":53.0150572247701,' + \
+          '"cpu_util_system":0.28468351478516135,"sender_has_retransmits":1,' + \
+          '"congestion_used":"cubic","streams":[{"id":1,"bytes":4194304,' + \
+          '"retransmits":0,"jitter":0,"errors":0,"omitted_errors":0,"packets":0,' + \
+          '"omitted_packets":0,"start_time":0,"end_time":1.000399}]}'
+
+###
 ### TODO:   Should we enable TCP immediate send semantics,
 ###         disabling Nagle's algorithm? The official iperf3
 ###         implementation seems to do this...
@@ -200,6 +212,32 @@ try:
     # Receive a fifth state update on CTRL
     recv_state(ctrlsock, 0x0d)
     print("Server is ready to exchange results")
+    
+    # Send the JSON result string to the server
+    send_varstr(ctrlsock, RESULTS)
+    
+    # Get JSON results from the server
+    reslen = struct.unpack("!i", recv_exact(ctrlsock, 4))[0]
+    resjson = recv_exact(ctrlsock, reslen).decode()
+
+    # Receive a sixth state update on CTRL
+    recv_state(ctrlsock, 0x0e)
+    print("Server is ready for us to display results")
+    
+    # Close DATA connection
+    datasock.close()
+    datasock = None
+    
+    # Inform server of state transition to IPERF_DONE
+    ctrlsock.sendall((0x10).to_bytes())
+    
+    # Close CTRL connection
+    ctrlsock.close()
+    ctrlsock = None
+    
+    # Output
+    print("Got results:")
+    print(resjson)
 
 except IperfError as e:
     exit(str(e))
