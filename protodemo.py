@@ -164,6 +164,9 @@ datasock = None
 try:
     # Create control (CTRL) socket and connect
     ctrlsock = connect(SERV_ADDR, SERV_PORT)
+    
+    # Eliminate unnecessary buffering on CTRL connection
+    ctrlsock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
     # Send the coookie to the server over the CTRL connection
     ctrlsock.sendall(sid)
