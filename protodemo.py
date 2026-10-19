@@ -25,11 +25,7 @@ ACCESS_DENIED = -1
 SERVER_ERROR = -2
 
 ###
-### FIXME:  Changing this without manually changing the length
-###         specifier in the code will cause breakage (unless
-###         the number of bytes remains unaffected).
-###
-###         If you change "num", you also have to change the
+### FIXME:  If you change "num", you also have to change the
 ###         number of bytes in the randomly generated data block.
 ###
 PARAMS = '{"tcp":true,"omit":0,"time":0,"num":4194304,"blockcount":0,' + \
