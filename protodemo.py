@@ -48,16 +48,6 @@ RESULTS = '{"cpu_util_total":53.2998321894476,"cpu_util_user":53.0150572247701,'
           '"retransmits":0,"jitter":0,"errors":0,"omitted_errors":0,"packets":0,' + \
           '"omitted_packets":0,"start_time":0,"end_time":1.000399}]}'
 
-###
-### TODO:   Should we enable TCP immediate send semantics,
-###         disabling Nagle's algorithm? The official iperf3
-###         implementation seems to do this...
-###
-###         TCP_NODELAY is probably desirable for the control
-###         connection, but the official implementation doesn't
-###         seem to use it for the data connection.
-###
-
 
 # Type of exception raised when iperf3 server does
 # something bad
