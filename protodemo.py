@@ -1,6 +1,7 @@
 import random
 import socket
 import struct
+import time
 import cookie
 
 SERV_ADDR = "speedtest.chi11.us.leaseweb.net"
@@ -12,6 +13,10 @@ CONNECT_TIMEOUT = 10
 # Give up on any single send/recv that makes no progress
 # for this many seconds (non-responsive/overloaded server)
 IO_TIMEOUT = 30
+
+# Send data in chunks not exceeding this size. This TCP
+# block size is from iperf_api.h
+BLKSIZE = 128 * 1024
 
 # iperf3 states that signal failure. States travel on CTRL
 # as a single *signed* byte, so these arrive as 0xff, 0xfe.
@@ -208,15 +213,25 @@ try:
     print("Server considers test to be running")
 
     # Send all data
-
-    # TODO: Eventually, we may want to refactor this into
-    # a loop that calls normal send() repeatedly instead of
-    # sendall(), because that would allow periodic tracking
-    # of progress/stats when a large transfer takes multiple
-    # seconds to complete.
-    print("About to send all data...")
-    datasock.sendall(data)
+    print("About to send data blocks...")
+    
+    bytes_sent = 0
+    while bytes_sent != len(data):
+        start = bytes_sent
+        end = start + BLKSIZE
+        
+        end = min(end, len(data))
+    
+        datasock.sendall(data[start:end])
+        
+        bytes_sent = end
+    
     print("Done sending data")
+    
+    # Seeks to avoid a race condition where the data is in
+    # flight when the test terminates.
+    # TODO: make sure this doesn't impact result accuracy
+    time.sleep(0.5)
 
     # Send a state update on CTRL ending the test
     print("Sending end-of-test")
