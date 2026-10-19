@@ -149,6 +149,16 @@ def connect(addr, port):
     sock.settimeout(IO_TIMEOUT)
     return sock
 
+# Shut down a TCP socket for writing and then wait
+# for the other end to hang up before destroying the
+# socket.
+def sync_close(sock):
+    sock.shutdown(socket.SHUT_WR)
+    
+    while sock.recv(128):
+        pass
+    
+    sock.close()
 
 # Generate a token that identifies our iperf3 session
 # (and encode it as a UTF-8 bytestring)
@@ -235,7 +245,7 @@ try:
     ctrlsock.sendall((0x10).to_bytes())
     
     # Close CTRL connection
-    ctrlsock.close()
+    sync_close(ctrlsock)
     ctrlsock = None
     
     # Output
