@@ -25,10 +25,10 @@ ACCESS_DENIED = -1
 SERVER_ERROR = -2
 
 ###
-### FIXME:  If you change "num", you also have to change the
-###         number of bytes in the randomly generated data block.
+### FIXME:  If you change "time", you also have to change the
+###         duration of the test.
 ###
-PARAMS = '{"tcp":true,"omit":0,"time":0,"num":4194304,"blockcount":0,' + \
+PARAMS = '{"tcp":true,"omit":0,"time":4,"num":0,"blockcount":0,' + \
          '"parallel":1,"len":131072,"pacing_timer":1000,' + \
          '"client_version":"3.16"}'
 
@@ -156,7 +156,6 @@ def sync_close(sock):
 sid = cookie.generate_cookie().encode()
 
 # Create some garbage data to send
-#data = random.randbytes(4194304)
 data = random.randbytes(DATASIZE)
 
 # Sockets for control and data streams
