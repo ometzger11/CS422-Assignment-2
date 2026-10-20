@@ -147,7 +147,7 @@ def sync_close(sock):
     
     sock.close()
 
-def run_demo(serv_addr, serv_port, test_duration):
+def run_test(serv_addr, serv_port, test_duration):
     # Fill in the parameter template with our test duration
     params = PARAM_TEMPLATE.substitute(duration=test_duration)
 
@@ -185,7 +185,7 @@ def run_demo(serv_addr, serv_port, test_duration):
         print("Ready to create streams")
 
         # Create data (DATA) socket and connect
-        datasock = connect(SERV_ADDR, SERV_PORT)
+        datasock = connect(serv_addr, serv_port)
 
         # Send the same cookie as before to identify our session
         datasock.sendall(sid)
@@ -202,7 +202,7 @@ def run_demo(serv_addr, serv_port, test_duration):
         print("About to send data blocks...")
         
         # TODO: customizable time
-        duration = TEST_DURATION
+        duration = test_duration
         
         launch_time = time.time()
         done_at = launch_time + duration
@@ -257,27 +257,34 @@ def run_demo(serv_addr, serv_port, test_duration):
         print(resjson)
 
     except IperfError as e:
-        exit(str(e))
+        print(e)
+        return False
     except socket.gaierror as e:
-        exit(f"Couldn't resolve {SERV_ADDR}: {e}")
+        print(f"Couldn't resolve {SERV_ADDR}: {e}")
+        return False
     except TimeoutError:
-        exit("Timed out waiting on the server")
+        print("Timed out waiting on the server")
+        return False
     except ConnectionError as e:
         # Refused, reset, or broken pipe mid-test
-        exit(f"Connection failed: {e}")
+        print(f"Connection failed: {e}")
+        return False
     except OSError as e:
-        exit(f"Network error: {e}")
+        print(f"Network error: {e}")
+        return False
     finally:
         # Clean up
         if datasock:
             datasock.close()
         if ctrlsock:
             ctrlsock.close()
+    
+    return True
 
 if __name__ == "__main__":
-    SERV_ADDR = "speedtest.chi11.us.leaseweb.net"
-    SERV_PORT = 5201
+    DEMO_ADDR = "speedtest.chi11.us.leaseweb.net"
+    DEMO_PORT = 5201
     
-    TEST_DURATION = 2
+    DEMO_DURATION = 2
     
-    run_demo(SERV_ADDR, SERV_PORT, TEST_DURATION)
+    run_test(DEMO_ADDR, DEMO_PORT, DEMO_DURATION)
