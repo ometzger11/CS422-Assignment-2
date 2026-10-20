@@ -16,7 +16,7 @@ IO_TIMEOUT = 30
 
 # Send data in chunks not exceeding this size. This TCP
 # block size is from iperf_api.h
-BLKSIZE = 128 * 1024
+DATASIZE = 128 * 1024
 
 # iperf3 states that signal failure. States travel on CTRL
 # as a single *signed* byte, so these arrive as 0xff, 0xfe.
@@ -156,7 +156,8 @@ def sync_close(sock):
 sid = cookie.generate_cookie().encode()
 
 # Create some garbage data to send
-data = random.randbytes(4194304)
+#data = random.randbytes(4194304)
+data = random.randbytes(DATASIZE)
 
 # Sockets for control and data streams
 ctrlsock = None
@@ -201,16 +202,19 @@ try:
     # Send all data
     print("About to send data blocks...")
     
-    bytes_sent = 0
-    while bytes_sent != len(data):
-        start = bytes_sent
-        end = start + BLKSIZE
-        
-        end = min(end, len(data))
+    # TODO: customizable time
+    duration = 4.0
     
-        datasock.sendall(data[start:end])
-        
-        bytes_sent = end
+    launch_time = time.time()
+    done_at = launch_time + duration
+    
+    bytes_sent = 0
+    
+    while time.time() < done_at:
+        if bytes_sent == len(data):
+            bytes_sent = 0
+    
+        bytes_sent = datasock.send(data[bytes_sent:])
     
     print("Done sending data")
     
