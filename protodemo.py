@@ -5,12 +5,6 @@ import struct
 import time
 import cookie
 
-SERV_ADDR = "speedtest.chi11.us.leaseweb.net"
-SERV_PORT = 5201
-
-# Run the test for this integer number of seconds
-TEST_DURATION = 3
-
 # Give up on connect() after this many seconds
 CONNECT_TIMEOUT = 10
 
@@ -30,9 +24,9 @@ SERVER_ERROR = -2
 
 # A $-string template for the parameters that will be sent
 # to the server before the test during negotiation.
-PARAM_TMPLSTR = '{"tcp":true,"omit":0,"time":$duration,"num":0,"blockcount":0,' + \
-                '"parallel":1,"len":131072,"pacing_timer":1000,' + \
-                '"client_version":"3.16"}'
+PARAM_TEMPLATE = string.Template('{"tcp":true,"omit":0,"time":$duration,"num":0,' + \
+                                 '"blockcount":0,"parallel":1,"len":131072,' + \
+                                 '"pacing_timer":1000,"client_version":"3.16"}')
 
 ###
 ### FIXME: This is fudged data. We may be able to get real
@@ -153,129 +147,137 @@ def sync_close(sock):
     
     sock.close()
 
-# Fill in the parameter template with our test duration
-param_template = string.Template(PARAM_TMPLSTR)
-params = param_template.substitute(duration=TEST_DURATION)
+def run_demo(serv_addr, serv_port, test_duration):
+    # Fill in the parameter template with our test duration
+    params = PARAM_TEMPLATE.substitute(duration=test_duration)
 
-# Generate a token that identifies our iperf3 session
-# (and encode it as a UTF-8 bytestring)
-sid = cookie.generate_cookie().encode()
+    # Generate a token that identifies our iperf3 session
+    # (and encode it as a UTF-8 bytestring)
+    sid = cookie.generate_cookie().encode()
 
-# Create some garbage data to send
-data = random.randbytes(DATASIZE)
+    # Create some garbage data to send
+    data = random.randbytes(DATASIZE)
 
-# Sockets for control and data streams
-ctrlsock = None
-datasock = None
-
-try:
-    # Create control (CTRL) socket and connect
-    ctrlsock = connect(SERV_ADDR, SERV_PORT)
-    
-    # Eliminate unnecessary buffering on CTRL connection
-    ctrlsock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-
-    # Send the coookie to the server over the CTRL connection
-    ctrlsock.sendall(sid)
-
-    # Receive a state update from the server
-    recv_state(ctrlsock, 0x09)
-    print("Ready to exchange parameters")
-    
-    # Send the parameters as JSON
-    send_varstr(ctrlsock, params)
-
-    # Receive another state update (a server that rejects
-    # our parameters answers with SERVER_ERROR or hangs up)
-    recv_state(ctrlsock, 0x0a)
-    print("Ready to create streams")
-
-    # Create data (DATA) socket and connect
-    datasock = connect(SERV_ADDR, SERV_PORT)
-
-    # Send the same cookie as before to identify our session
-    datasock.sendall(sid)
-
-    # Receive a third state update on CTRL (!)
-    recv_state(ctrlsock, 0x01)
-    print("Server wants to start test")
-
-    # Receive a fourth state update on CTRL
-    recv_state(ctrlsock, 0x02)
-    print("Server considers test to be running")
-
-    # Send all data
-    print("About to send data blocks...")
-    
-    # TODO: customizable time
-    duration = TEST_DURATION
-    
-    launch_time = time.time()
-    done_at = launch_time + duration
-    
-    bytes_sent = 0
-    
-    while time.time() < done_at:
-        if bytes_sent == len(data):
-            bytes_sent = 0
-    
-        bytes_sent = datasock.send(data[bytes_sent:])
-    
-    print("Done sending data")
-    
-    # Seeks to avoid a race condition where the data is in
-    # flight when the test terminates.
-    # TODO: make sure this doesn't impact result accuracy
-    time.sleep(0.5)
-
-    # Send a state update on CTRL ending the test
-    print("Sending end-of-test")
-    ctrlsock.sendall((0x04).to_bytes())
-
-    # Receive a fifth state update on CTRL
-    recv_state(ctrlsock, 0x0d)
-    print("Server is ready to exchange results")
-    
-    # Send the JSON result string to the server
-    send_varstr(ctrlsock, RESULTS)
-    
-    # Get JSON results from the server
-    reslen = struct.unpack("!i", recv_exact(ctrlsock, 4))[0]
-    resjson = recv_exact(ctrlsock, reslen).decode()
-
-    # Receive a sixth state update on CTRL
-    recv_state(ctrlsock, 0x0e)
-    print("Server is ready for us to display results")
-    
-    # Close DATA connection
-    datasock.close()
-    datasock = None
-    
-    # Inform server of state transition to IPERF_DONE
-    ctrlsock.sendall((0x10).to_bytes())
-    
-    # Close CTRL connection
-    sync_close(ctrlsock)
+    # Sockets for control and data streams
     ctrlsock = None
-    
-    # Output
-    print("Got results:")
-    print(resjson)
+    datasock = None
 
-except IperfError as e:
-    exit(str(e))
-except socket.gaierror as e:
-    exit(f"Couldn't resolve {SERV_ADDR}: {e}")
-except TimeoutError:
-    exit("Timed out waiting on the server")
-except ConnectionError as e:
-    # Refused, reset, or broken pipe mid-test
-    exit(f"Connection failed: {e}")
-except OSError as e:
-    exit(f"Network error: {e}")
-finally:
-    # Clean up
-    if datasock:
+    try:
+        # Create control (CTRL) socket and connect
+        ctrlsock = connect(serv_addr, serv_port)
+        
+        # Eliminate unnecessary buffering on CTRL connection
+        ctrlsock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+        # Send the coookie to the server over the CTRL connection
+        ctrlsock.sendall(sid)
+
+        # Receive a state update from the server
+        recv_state(ctrlsock, 0x09)
+        print("Ready to exchange parameters")
+        
+        # Send the parameters as JSON
+        send_varstr(ctrlsock, params)
+
+        # Receive another state update (a server that rejects
+        # our parameters answers with SERVER_ERROR or hangs up)
+        recv_state(ctrlsock, 0x0a)
+        print("Ready to create streams")
+
+        # Create data (DATA) socket and connect
+        datasock = connect(SERV_ADDR, SERV_PORT)
+
+        # Send the same cookie as before to identify our session
+        datasock.sendall(sid)
+
+        # Receive a third state update on CTRL (!)
+        recv_state(ctrlsock, 0x01)
+        print("Server wants to start test")
+
+        # Receive a fourth state update on CTRL
+        recv_state(ctrlsock, 0x02)
+        print("Server considers test to be running")
+
+        # Send all data
+        print("About to send data blocks...")
+        
+        # TODO: customizable time
+        duration = TEST_DURATION
+        
+        launch_time = time.time()
+        done_at = launch_time + duration
+        
+        bytes_sent = 0
+        
+        while time.time() < done_at:
+            if bytes_sent == len(data):
+                bytes_sent = 0
+        
+            bytes_sent = datasock.send(data[bytes_sent:])
+        
+        print("Done sending data")
+        
+        # Seeks to avoid a race condition where the data is in
+        # flight when the test terminates.
+        # TODO: make sure this doesn't impact result accuracy
+        time.sleep(0.5)
+
+        # Send a state update on CTRL ending the test
+        print("Sending end-of-test")
+        ctrlsock.sendall((0x04).to_bytes())
+
+        # Receive a fifth state update on CTRL
+        recv_state(ctrlsock, 0x0d)
+        print("Server is ready to exchange results")
+        
+        # Send the JSON result string to the server
+        send_varstr(ctrlsock, RESULTS)
+        
+        # Get JSON results from the server
+        reslen = struct.unpack("!i", recv_exact(ctrlsock, 4))[0]
+        resjson = recv_exact(ctrlsock, reslen).decode()
+
+        # Receive a sixth state update on CTRL
+        recv_state(ctrlsock, 0x0e)
+        print("Server is ready for us to display results")
+        
+        # Close DATA connection
         datasock.close()
-    if ctrlsock:
-        ctrlsock.close()
+        datasock = None
+        
+        # Inform server of state transition to IPERF_DONE
+        ctrlsock.sendall((0x10).to_bytes())
+        
+        # Close CTRL connection
+        sync_close(ctrlsock)
+        ctrlsock = None
+        
+        # Output
+        print("Got results:")
+        print(resjson)
+
+    except IperfError as e:
+        exit(str(e))
+    except socket.gaierror as e:
+        exit(f"Couldn't resolve {SERV_ADDR}: {e}")
+    except TimeoutError:
+        exit("Timed out waiting on the server")
+    except ConnectionError as e:
+        # Refused, reset, or broken pipe mid-test
+        exit(f"Connection failed: {e}")
+    except OSError as e:
+        exit(f"Network error: {e}")
+    finally:
+        # Clean up
+        if datasock:
+            datasock.close()
+        if ctrlsock:
+            ctrlsock.close()
+
+if __name__ == "__main__":
+    SERV_ADDR = "speedtest.chi11.us.leaseweb.net"
+    SERV_PORT = 5201
+    
+    TEST_DURATION = 2
+    
+    run_demo(SERV_ADDR, SERV_PORT, TEST_DURATION)
