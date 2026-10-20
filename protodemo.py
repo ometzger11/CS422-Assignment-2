@@ -1,11 +1,15 @@
 import random
 import socket
+import string
 import struct
 import time
 import cookie
 
 SERV_ADDR = "speedtest.chi11.us.leaseweb.net"
 SERV_PORT = 5201
+
+# Run the test for this integer number of seconds
+TEST_DURATION = 3
 
 # Give up on connect() after this many seconds
 CONNECT_TIMEOUT = 10
@@ -24,13 +28,11 @@ SERVER_TERMINATE = 11
 ACCESS_DENIED = -1
 SERVER_ERROR = -2
 
-###
-### FIXME:  If you change "time", you also have to change the
-###         duration of the test.
-###
-PARAMS = '{"tcp":true,"omit":0,"time":4,"num":0,"blockcount":0,' + \
-         '"parallel":1,"len":131072,"pacing_timer":1000,' + \
-         '"client_version":"3.16"}'
+# A $-string template for the parameters that will be sent
+# to the server before the test during negotiation.
+PARAM_TMPLSTR = '{"tcp":true,"omit":0,"time":$duration,"num":0,"blockcount":0,' + \
+                '"parallel":1,"len":131072,"pacing_timer":1000,' + \
+                '"client_version":"3.16"}'
 
 ###
 ### FIXME: This is fudged data. We may be able to get real
@@ -151,6 +153,10 @@ def sync_close(sock):
     
     sock.close()
 
+# Fill in the parameter template with our test duration
+param_template = string.Template(PARAM_TMPLSTR)
+params = param_template.substitute(duration=TEST_DURATION)
+
 # Generate a token that identifies our iperf3 session
 # (and encode it as a UTF-8 bytestring)
 sid = cookie.generate_cookie().encode()
@@ -177,7 +183,7 @@ try:
     print("Ready to exchange parameters")
     
     # Send the parameters as JSON
-    send_varstr(ctrlsock, PARAMS)
+    send_varstr(ctrlsock, params)
 
     # Receive another state update (a server that rejects
     # our parameters answers with SERVER_ERROR or hangs up)
@@ -202,7 +208,7 @@ try:
     print("About to send data blocks...")
     
     # TODO: customizable time
-    duration = 4.0
+    duration = TEST_DURATION
     
     launch_time = time.time()
     done_at = launch_time + duration
