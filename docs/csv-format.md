@@ -11,7 +11,7 @@ Two files. `run_id` links them.
 | port | port actually used |
 | algo_requested | `cubic` / `reno` / `bbr` |
 | algo_actual | what `tcpinfo.get_congestion()` reported (empty if the run failed before connecting) |
-| rep | repetition number (1..N) |
+| rep | repetition number (0..N-1, when plotting this will be readjusted to 1-base) |
 | start_utc | ISO timestamp when the test started |
 | status | `ok` or `failed` |
 | error | short reason if failed (timeout, access denied, DNS, ...), else empty |
