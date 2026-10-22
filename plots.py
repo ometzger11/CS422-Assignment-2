@@ -150,7 +150,12 @@ def plot_timeseries(server, server_runs, out_dir):
                         ax.plot(s["t_s"], s["min_rtt_ms"], color=st["color"],
                                 linestyle=(0, (2, 2)), linewidth=1.0)
                 ax.set_ylabel(ylabel)
-                ax.set_ylim(*ylims[col])
+                if col == "retrans_delta":
+                    # Mostly zeros plus rare bursts: symlog keeps small counts visible
+                    ax.set_yscale("symlog", linthresh=1)
+                    ax.set_ylim(0, max(ylims[col][1] * 1.5, 10))
+                else:
+                    ax.set_ylim(*ylims[col])
             axes[-1].set_xlim(0, tmax)
             axes[-1].set_xlabel("Time since data start (s)")
             fig.legend(*axes[0].get_legend_handles_labels(), ncol=len(rep_runs),
@@ -182,7 +187,11 @@ def plot_scatter(server, server_runs, out_dir):
             ax.scatter(x, y, s=14, color=st["color"], marker=st["marker"],
                        alpha=0.55, linewidths=0, label=algo)
         ax.set_xlabel(xlabel)
-        if col != "srtt_ms":  # RTT never reaches 0; let it zoom to the data
+        if col == "retrans_delta":
+            # Mostly zeros plus rare bursts: symlog shows both
+            ax.set_xscale("symlog", linthresh=1)
+            ax.set_xlim(left=-0.5)
+        elif col != "srtt_ms":  # RTT never reaches 0; let it zoom to the data
             ax.set_xlim(left=0)
     axes[0].set_ylabel("Goodput (Mbit/s)")
     axes[0].set_ylim(bottom=0)
@@ -255,6 +264,7 @@ def plot_comparison(groups, out_dir):
     algos = sorted({r["algo"] for rs in groups.values() for r in rs}, key=algo_sort_key)
     fig, ax = plt.subplots(figsize=(7, 0.55 * len(servers) + 1.4))
     offsets = np.linspace(-0.22, 0.22, len(algos)) if len(algos) > 1 else [0]
+    xmax = 0
     for i, server in enumerate(servers):
         for off, algo in zip(offsets, algos):
             st = style(algo)
@@ -262,6 +272,7 @@ def plot_comparison(groups, out_dir):
                      for r in groups[server] if r["algo"] == algo]
             if not means:
                 continue
+            xmax = max(xmax, max(means))
             y = np.full(len(means), i + off)
             ax.scatter(means, y, s=30, color=st["color"], marker=st["marker"],
                        edgecolors="white", linewidths=0.8, zorder=3,
@@ -270,13 +281,13 @@ def plot_comparison(groups, out_dir):
                     linewidth=1.0, alpha=0.6, zorder=2)
     ax.set_yticks(range(len(servers)))
     ax.set_yticklabels(servers)
-    ax.invert_yaxis()
-    ax.set_xlim(left=0)
+    ax.set_ylim(len(servers) - 0.5, -0.5)  # padding above/below, first server on top
+    ax.set_xlim(0, xmax * 1.08 if xmax > 0 else 1)  # room so the largest marker isn't clipped
     ax.set_xlabel("Mean goodput per run (Mbit/s)")
     ax.grid(axis="y", visible=False)
     ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=len(algos))
-    ax.set_title("Mean goodput by server and algorithm (one marker per repetition)",
-                 pad=24)
+    # Title centered on the whole figure, so long server names can't push it off the edge
+    fig.suptitle("Mean goodput by server and algorithm (one marker per repetition)")
     fig.tight_layout()
     path = os.path.join(out_dir, "algo_comparison.pdf")
     fig.savefig(path)

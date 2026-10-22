@@ -1,9 +1,13 @@
+import json
+import os
 import random
+import select
 import socket
 import string
 import struct
 import time
 import cookie
+import tcpinfo
 
 # Give up on connect() after this many seconds
 CONNECT_TIMEOUT = 10
@@ -28,17 +32,10 @@ PARAM_TEMPLATE = string.Template('{"tcp":true,"omit":0,"time":$duration,"num":0,
                                  '"blockcount":0,"parallel":1,"len":131072,' + \
                                  '"pacing_timer":1000,"client_version":"3.16"}')
 
-###
-### FIXME: This is fudged data. We may be able to get real
-###        values for some fields, but others are just going
-###        to be reasonable pretend values to make the server
-###        happy.
-###
-RESULTS = '{"cpu_util_total":53.2998321894476,"cpu_util_user":53.0150572247701,' + \
-          '"cpu_util_system":0.28468351478516135,"sender_has_retransmits":1,' + \
-          '"congestion_used":"cubic","streams":[{"id":1,"bytes":4194304,' + \
-          '"retransmits":0,"jitter":0,"errors":0,"omitted_errors":0,"packets":0,' + \
-          '"omitted_packets":0,"start_time":0,"end_time":1.000399}]}'
+# Column order for samples.csv (see docs/csv-format.md)
+SAMPLE_COLUMNS = ["run_id", "t_s", "bytes_acked", "goodput_mbps", "cwnd_segs",
+                  "srtt_ms", "rttvar_ms", "min_rtt_ms", "total_retrans",
+                  "retrans_delta", "pacing_rate_mbps"]
 
 
 # Type of exception raised when iperf3 server does
@@ -77,9 +74,10 @@ def recv_exact(sock, n):
 # An IperfError is also raised if the state update
 # is valid, but does not match expected.
 def recv_state(sock, expected):
-    state = recv_exact(sock, 1)[0]
+    # Signed byte, so ACCESS_DENIED arrives as -1 (not 255)
+    state = struct.unpack("b", recv_exact(sock, 1))[0]
 
-    print(f"Got: {state:#x}")
+    print(f"Got: {state & 0xff:#x}")
 
     if state == expected:
         return
@@ -99,7 +97,7 @@ def recv_state(sock, expected):
         raise IperfError("Server terminated the test")
 
     raise IperfError(f"Server said something invalid "
-                     f"(got {state:#x}, expected {expected:#x})")
+                     f"(got {state & 0xff:#x}, expected {expected:#x})")
 
 # Send a bytestring of variable length by first sending an
 # integer specifying the length followed by the encoded
@@ -129,12 +127,35 @@ def send_varstr(sock, pystring):
 # A timeout is used for the connection. See the constant
 # CONNECT_TIMEOUT above.
 #
+# If algo is given, it is set before connecting.
+#
 # Exceptions from socket module are allowed to propagate
 # on failure.
-def connect(addr, port):
-    sock = socket.create_connection((addr, port), timeout=CONNECT_TIMEOUT)
-    sock.settimeout(IO_TIMEOUT)
-    return sock
+def connect(addr, port, algo=None):
+    last_err = None
+    # Try each address the name resolves to (like create_connection)
+    for family, socktype, proto, _, sockaddr in \
+            socket.getaddrinfo(addr, port, type=socket.SOCK_STREAM):
+        sock = socket.socket(family, socktype, proto)
+        try:
+            if algo:
+                try:
+                    tcpinfo.set_congestion(sock, algo)
+                except OSError as e:
+                    # Local setup problem, not the server's fault
+                    raise IperfError(f"Can't select congestion control "
+                                     f"'{algo}' on this host: {e}") from e
+            sock.settimeout(CONNECT_TIMEOUT)
+            sock.connect(sockaddr)
+            sock.settimeout(IO_TIMEOUT)
+            return sock
+        except IperfError:
+            sock.close()
+            raise
+        except OSError as e:
+            sock.close()
+            last_err = e
+    raise last_err if last_err else OSError(f"No addresses for {addr}")
 
 # Shut down a TCP socket for writing and then wait
 # for the other end to hang up before destroying the
@@ -147,9 +168,89 @@ def sync_close(sock):
     
     sock.close()
 
-def run_test(serv_addr, serv_port, test_duration):
+# Client results JSON, shaped like the official iperf3 client's.
+def build_results(bytes_written, elapsed, algo_used, retransmits,
+                  cpu_user, cpu_system):
+    return json.dumps({
+        "cpu_util_total": cpu_user + cpu_system,
+        "cpu_util_user": cpu_user,
+        "cpu_util_system": cpu_system,
+        "sender_has_retransmits": 1,
+        "congestion_used": algo_used,
+        "streams": [{
+            "id": 1,
+            "bytes": bytes_written,
+            "retransmits": retransmits,
+            "jitter": 0,
+            "errors": 0,
+            "omitted_errors": 0,
+            "packets": 0,
+            "omitted_packets": 0,
+            "start_time": 0,
+            "end_time": elapsed,
+        }],
+    }, separators=(",", ":"))
+
+# Samples TCP_INFO and writes samples.csv rows. Goodput comes
+# from bytes_acked, not bytes handed to send().
+class Sampler:
+    def __init__(self, sock, run_id, writer):
+        self.sock = sock
+        self.run_id = run_id
+        self.writer = writer
+        self.start = None
+        self.prev_t = None
+        self.prev_acked = None
+        self.prev_retrans = None
+        self.last = None   # most recent tcp_info dict
+
+    # Record the baseline at the moment data starts flowing
+    def begin(self, now):
+        info = tcpinfo.read_tcp_info(self.sock)
+        self.start = now
+        self.prev_t = now
+        self.prev_acked = info["bytes_acked"]
+        self.prev_retrans = info["total_retrans"]
+        self.last = info
+
+    # Take one sample and write it as a CSV row
+    def sample(self, now):
+        info = tcpinfo.read_tcp_info(self.sock)
+        dt = now - self.prev_t
+        if dt <= 0:
+            return
+        acked = info["bytes_acked"]
+        goodput_mbps = (acked - self.prev_acked) * 8 / dt / 1e6
+
+        if self.writer is not None:
+            self.writer.writerow([
+                self.run_id,
+                f"{now - self.start:.3f}",
+                acked,
+                f"{goodput_mbps:.3f}",
+                info["snd_cwnd"],
+                f"{info['rtt'] / 1000:.3f}",
+                f"{info['rttvar'] / 1000:.3f}",
+                f"{info['min_rtt'] / 1000:.3f}",
+                info["total_retrans"],
+                info["total_retrans"] - self.prev_retrans,
+                f"{info['pacing_rate'] * 8 / 1e6:.3f}",
+            ])
+
+        self.prev_t = now
+        self.prev_acked = acked
+        self.prev_retrans = info["total_retrans"]
+        self.last = info
+
+
+# Run one iperf3 test. algo=None uses the kernel default;
+# samples_writer=None skips sample logging. Returns a dict with
+# status ("ok"/"failed"), error, algo_actual, bytes_written and
+# server_reported_bytes. Network/server errors don't raise.
+def run_test(serv_addr, serv_port, duration, algo=None, interval=0.2,
+             run_id="", samples_writer=None):
     # Fill in the parameter template with our test duration
-    params = PARAM_TEMPLATE.substitute(duration=test_duration)
+    params = PARAM_TEMPLATE.substitute(duration=duration)
 
     # Generate a token that identifies our iperf3 session
     # (and encode it as a UTF-8 bytestring)
@@ -158,11 +259,28 @@ def run_test(serv_addr, serv_port, test_duration):
     # Create some garbage data to send
     data = random.randbytes(DATASIZE)
 
+    result = {
+        "status": "failed",
+        "error": None,
+        "algo_actual": None,
+        "bytes_written": 0,
+        "server_reported_bytes": None,
+    }
+
     # Sockets for control and data streams
     ctrlsock = None
     datasock = None
 
     try:
+        # Check the algorithm works locally before contacting the server
+        if algo:
+            with socket.socket() as probe:
+                try:
+                    tcpinfo.set_congestion(probe, algo)
+                except OSError as e:
+                    raise IperfError(f"Can't select congestion control "
+                                     f"'{algo}' on this host: {e}") from e
+
         # Create control (CTRL) socket and connect
         ctrlsock = connect(serv_addr, serv_port)
         
@@ -185,7 +303,9 @@ def run_test(serv_addr, serv_port, test_duration):
         print("Ready to create streams")
 
         # Create data (DATA) socket and connect
-        datasock = connect(serv_addr, serv_port)
+        # (with the requested congestion control algorithm)
+        datasock = connect(serv_addr, serv_port, algo)
+        result["algo_actual"] = tcpinfo.get_congestion(datasock)
 
         # Send the same cookie as before to identify our session
         datasock.sendall(sid)
@@ -199,21 +319,52 @@ def run_test(serv_addr, serv_port, test_duration):
         print("Server considers test to be running")
 
         # Send all data
+
+        # select() waits for buffer space or the next sample, so
+        # samples stay on schedule even when sending is blocked
         print("About to send data blocks...")
         
-        # TODO: customizable time
-        duration = test_duration
-        
-        launch_time = time.time()
+        sampler = Sampler(datasock, run_id, samples_writer)
+        cpu_start = os.times()
+        launch_time = time.monotonic()
         done_at = launch_time + duration
+        next_sample = launch_time + interval
+        last_progress = launch_time
+        sampler.begin(launch_time)
         
-        bytes_sent = 0
+        offset = 0          # position within the data block
+        bytes_written = 0   # total bytes handed to send()
         
-        while time.time() < done_at:
-            if bytes_sent == len(data):
-                bytes_sent = 0
+        while True:
+            now = time.monotonic()
         
-            bytes_sent = datasock.send(data[bytes_sent:])
+            if now >= next_sample:
+                sampler.sample(now)
+                # Skip missed slots instead of bursting to catch up
+                while next_sample <= now:
+                    next_sample += interval
+        
+            if now >= done_at:
+                break
+
+            if now - last_progress > IO_TIMEOUT:
+                raise TimeoutError
+
+            wait = min(next_sample, done_at) - now
+            _, writable, _ = select.select([], [datasock], [], wait)
+            if writable:
+                n = datasock.send(data[offset:])
+                offset = (offset + n) % len(data)
+                bytes_written += n
+                last_progress = time.monotonic()
+
+        end_time = time.monotonic()
+        # Final sample, unless the loop just took one
+        if end_time - sampler.prev_t > interval / 4:
+            sampler.sample(end_time)
+        elapsed = end_time - launch_time
+        cpu_end = os.times()
+        result["bytes_written"] = bytes_written
         
         print("Done sending data")
         
@@ -231,11 +382,20 @@ def run_test(serv_addr, serv_port, test_duration):
         print("Server is ready to exchange results")
         
         # Send the JSON result string to the server
-        send_varstr(ctrlsock, RESULTS)
+        cpu_user = (cpu_end.user - cpu_start.user) / elapsed * 100
+        cpu_system = (cpu_end.system - cpu_start.system) / elapsed * 100
+        send_varstr(ctrlsock, build_results(
+            bytes_written, round(elapsed, 6), result["algo_actual"],
+            sampler.last["total_retrans"], cpu_user, cpu_system))
         
         # Get JSON results from the server
         reslen = struct.unpack("!i", recv_exact(ctrlsock, 4))[0]
         resjson = recv_exact(ctrlsock, reslen).decode()
+        try:
+            result["server_reported_bytes"] = \
+                json.loads(resjson)["streams"][0]["bytes"]
+        except (ValueError, KeyError, IndexError, TypeError):
+            pass  # unexpected shape; not needed for our measurements
 
         # Receive a sixth state update on CTRL
         recv_state(ctrlsock, 0x0e)
@@ -256,22 +416,19 @@ def run_test(serv_addr, serv_port, test_duration):
         print("Got results:")
         print(resjson)
 
+        result["status"] = "ok"
+
     except IperfError as e:
-        print(e)
-        return False
+        result["error"] = str(e)
     except socket.gaierror as e:
-        print(f"Couldn't resolve {SERV_ADDR}: {e}")
-        return False
+        result["error"] = f"Couldn't resolve {serv_addr}: {e}"
     except TimeoutError:
-        print("Timed out waiting on the server")
-        return False
+        result["error"] = "Timed out waiting on the server"
     except ConnectionError as e:
         # Refused, reset, or broken pipe mid-test
-        print(f"Connection failed: {e}")
-        return False
+        result["error"] = f"Connection failed: {e}"
     except OSError as e:
-        print(f"Network error: {e}")
-        return False
+        result["error"] = f"Network error: {e}"
     finally:
         # Clean up
         if datasock:
@@ -279,12 +436,25 @@ def run_test(serv_addr, serv_port, test_duration):
         if ctrlsock:
             ctrlsock.close()
     
-    return True
+    if result["error"]:
+        print(result["error"])
+    return result
 
 if __name__ == "__main__":
+    import csv
+    import sys
+
     DEMO_ADDR = "speedtest.chi11.us.leaseweb.net"
     DEMO_PORT = 5201
     
     DEMO_DURATION = 2
     
-    run_test(DEMO_ADDR, DEMO_PORT, DEMO_DURATION)
+    # Usage: python3 iperftest.py [host] [port] [algo]
+    addr = sys.argv[1] if len(sys.argv) > 1 else DEMO_ADDR
+    port = int(sys.argv[2]) if len(sys.argv) > 2 else DEMO_PORT
+    algo = sys.argv[3] if len(sys.argv) > 3 else None
+
+    # Samples go to stdout so you can see what gets logged
+    writer = csv.writer(sys.stdout)
+    writer.writerow(SAMPLE_COLUMNS)
+    print(run_test(addr, port, DEMO_DURATION, algo, 0.2, "demo", writer))
