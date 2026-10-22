@@ -1,0 +1,4 @@
+server,algo,runs,samples,min_mbps,median_mbps,mean_mbps,p95_mbps,run_mean_std_mbps
+speedtest.chi11.us.leaseweb.net:5201,cubic,1,50,104.92,197.96,199.88,269.94,
+speedtest.chi11.us.leaseweb.net:5201,reno,1,50,12.75,191.46,184.53,263.90,
+speedtest.chi11.us.leaseweb.net:5201,bbr,1,50,89.48,212.39,199.49,300.35,

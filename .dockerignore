@@ -1,0 +1,8 @@
+.git
+.venv
+__pycache__
+results
+tests/fake_data/*.csv
+tests/fake_data/out
+tests/plots_*
+tests/*.csv

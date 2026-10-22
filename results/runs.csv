@@ -1,0 +1,4 @@
+run_id,server,port,algo_requested,algo_actual,rep,start_utc,status,error
+test-cubic-r0,speedtest.chi11.us.leaseweb.net,5201,cubic,cubic,0,2026-10-22T05:21:54+00:00,ok,
+test-reno-r0,speedtest.chi11.us.leaseweb.net,5201,reno,reno,0,2026-10-22T05:22:05+00:00,ok,
+test-bbr-r0,speedtest.chi11.us.leaseweb.net,5201,bbr,bbr,0,2026-10-22T05:22:17+00:00,ok,
