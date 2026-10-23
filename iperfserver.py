@@ -5,6 +5,9 @@ class IperfServer:
         self.host = host
         self.port = port
         self.options = options
+    
+    def __str__(self):
+        return self.host
 
 def parse_servers(filename):
     with open(filename, "r") as file:
