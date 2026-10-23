@@ -1,8 +1,8 @@
-date_utc: 2026-10-22T05:21:53Z
+date_utc: 2026-10-23T19:31:15Z
 kernel: 6.8.0-147-generic
 arch: aarch64
 available_cc: reno cubic bbr
 allowed_cc: reno cubic bbr
 default_cc: cubic
 python: Python 3.12.3
-settings: n=10 duration=10 interval=0.2 reps=1
+settings: n=10 duration=60 interval=0.2 reps=3 servers=listed_iperf3_servers.json max_attempts=30

@@ -2,3 +2,5 @@ __pycache__/
 .venv/
 tests/fake_data/*.csv
 tests/fake_data/out/
+tests/*.csv
+tests/plots_*/
