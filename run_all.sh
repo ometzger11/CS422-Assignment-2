@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Full pipeline: record environment -> run tests -> make plots.
 #
-# Usage: ./run_all.sh [-n SERVERS] [--duration SEC] [--interval SEC] [--reps N] [--out DIR]
-#
+# Usage: ./run_all.sh [-n SERVERS] [--duration SEC] [--interval SEC] [--reps N]
+#                     [--servers FILE] [--max-attempts N] [--out DIR]
 # Works both in Docker (results go to /results) and directly in the repo.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -11,15 +11,19 @@ N=10
 DURATION=60
 INTERVAL=0.2
 REPS=3
+SERVERS=listed_iperf3_servers.json
+MAX_ATTEMPTS=30
 OUT="${RESULTS_DIR:-results}"
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        -n)         N="$2"; shift 2 ;;
-        --duration) DURATION="$2"; shift 2 ;;
-        --interval) INTERVAL="$2"; shift 2 ;;
-        --reps)     REPS="$2"; shift 2 ;;
-        --out)      OUT="$2"; shift 2 ;;
+        -n)             N="$2"; shift 2 ;;
+        --duration)     DURATION="$2"; shift 2 ;;
+        --interval)     INTERVAL="$2"; shift 2 ;;
+        --reps)         REPS="$2"; shift 2 ;;
+        --servers)      SERVERS="$2"; shift 2 ;;
+        --max-attempts) MAX_ATTEMPTS="$2"; shift 2 ;;
+        --out)          OUT="$2"; shift 2 ;;
         -h|--help)  sed -n '2,6p' "$0"; exit 0 ;;
         *) echo "Unknown option: $1" >&2; exit 1 ;;
     esac
@@ -37,7 +41,7 @@ REPO="$(pwd)"
     echo "allowed_cc: $(cat /proc/sys/net/ipv4/tcp_allowed_congestion_control)"
     echo "default_cc: $(cat /proc/sys/net/ipv4/tcp_congestion_control)"
     echo "python: $(python3 --version 2>&1)"
-    echo "settings: n=$N duration=$DURATION interval=$INTERVAL reps=$REPS"
+    echo "settings: n=$N duration=$DURATION interval=$INTERVAL reps=$REPS servers=$SERVERS max_attempts=$MAX_ATTEMPTS"
 } > "$OUT/environment.txt"
 cat "$OUT/environment.txt"
 
@@ -58,11 +62,9 @@ if bad:
 PY
 
 # 2. Run the tests (writes runs.csv and samples.csv into $OUT)
-# TODO: replace with Trevor's runner once it exists, e.g.
-#   python3 "$REPO/runner.py" -n "$N" --duration "$DURATION" --interval "$INTERVAL" \
-#       --reps "$REPS" --runs "$OUT/runs.csv" --samples "$OUT/samples.csv"
-# Placeholder: single-server test (ignores -n and --interval; TEST_HOST overrides the server)
-(cd "$OUT" && python3 "$REPO/tests/mini_batch.py" "$DURATION" "$REPS" ${TEST_HOST:+"$TEST_HOST"})
+python3 "$REPO/runner.py" -n "$N" --duration "$DURATION" --interval "$INTERVAL" \
+    --reps "$REPS" --servers "$SERVERS" --max-attempts "$MAX_ATTEMPTS" \
+    --runs "$OUT/runs.csv" --samples "$OUT/samples.csv"
 
 # 3. Plots and summary tables
 python3 "$REPO/plots.py" --runs "$OUT/runs.csv" --samples "$OUT/samples.csv" \

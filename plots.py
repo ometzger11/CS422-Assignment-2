@@ -9,7 +9,8 @@ Outputs (all in --out):
   algo_comparison.pdf       mean goodput of every run, per server and algorithm
   summary_goodput.csv/.md   min / median / mean / p95 goodput per server x algorithm
 
-Only runs with status == "ok" are plotted.
+Only servers where every algorithm x rep has status == "ok" are plotted
+(a server dropped partway through is skipped, and listed on stdout).
 
 Usage:
   python3 plots.py --runs runs.csv --samples samples.csv --out plots/
@@ -76,14 +77,27 @@ def load(runs_path, samples_path):
     """Return {run_id: run_dict} for ok runs, each with run["samples"] as
     a dict of numpy arrays sorted by time."""
     runs = {}
+    expected = set()            # every (algo, rep) attempted in this batch
+    done = defaultdict(set)     # server label -> (algo, rep) pairs that succeeded
     with open(runs_path, newline="") as f:
         for row in csv.DictReader(f):
+            rep = int(row.get("rep") or 0)
+            label = f'{row["server"]}:{row["port"]}'
+            expected.add((row.get("algo_requested"), rep))
             if row.get("status", "ok") != "ok":
                 continue
+            done[label].add((row.get("algo_requested"), rep))
             row["algo"] = row.get("algo_actual") or row.get("algo_requested") or "?"
-            row["rep"] = int(row.get("rep") or 0)
-            row["label"] = f'{row["server"]}:{row["port"]}'
+            row["rep"] = rep
+            row["label"] = label
             runs[row["run_id"]] = row
+
+    # Keep only servers that completed every algorithm x rep, so all
+    # algorithms are compared on the same destinations
+    incomplete = {label for label, pairs in done.items() if pairs != expected}
+    for label in sorted(incomplete):
+        print(f"Skipping {label}: did not complete every algorithm/rep")
+    runs = {rid: r for rid, r in runs.items() if r["label"] not in incomplete}
 
     cols = defaultdict(lambda: defaultdict(list))
     with open(samples_path, newline="") as f:
