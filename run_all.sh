@@ -70,4 +70,6 @@ python3 "$REPO/runner.py" -n "$N" --duration "$DURATION" --interval "$INTERVAL" 
 python3 "$REPO/plots.py" --runs "$OUT/runs.csv" --samples "$OUT/samples.csv" \
     --out "$OUT/plots"
 
+python3 "$REPO/plots.py" --runs "$OUT/runs.csv" --samples "$OUT/samples.csv" \
+    --algos cubic --out "$OUT/plots_q2"
 echo "Done. Results in $OUT/"
