@@ -7,6 +7,7 @@ Outputs (all in --out):
                             retransmits vs time, one line per algorithm
   scatter_<server>.pdf      cwnd / RTT / retransmits vs goodput, all reps pooled
   algo_comparison.pdf       mean goodput of every run, per server and algorithm
+  goodput_overview.pdf      goodput over time (1 s averages), one panel per server, rep 1
   summary_goodput.csv/.md   min / median / mean / p95 goodput per server x algorithm
 
 Only servers where every algorithm x rep has status == "ok" are plotted
@@ -309,6 +310,52 @@ def plot_comparison(groups, out_dir):
     return path
 
 
+def plot_goodput_overview(groups, out_dir, rep=0):
+    """One small panel per server (sorted by base RTT): goodput over time for
+    one repetition, one line per algorithm. Uses 1-second averages computed from
+    bytes_acked, so short ACK stalls/bursts don't hide the trend."""
+    def base_rtt(rs):
+        return np.nanmin(np.concatenate([r["samples"]["min_rtt_ms"] for r in rs]))
+
+    servers = sorted(groups, key=lambda s: base_rtt(groups[s]))
+    algos = sorted({r["algo"] for rs in groups.values() for r in rs}, key=algo_sort_key)
+    ncols = 2
+    nrows = int(np.ceil(len(servers) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(8, 1.55 * nrows + 1.1),
+                             sharex=True, sharey=True, squeeze=False)
+    ymax = 0
+    for ax, server in zip(axes.flat, servers):
+        for r in sorted((r for r in groups[server] if r["rep"] == rep),
+                        key=lambda r: algo_sort_key(r["algo"])):
+            s = r["samples"]
+            edges = np.arange(1, np.floor(np.nanmax(s["t_s"])) + 1)
+            if len(edges) < 2:
+                continue
+            acked = np.interp(edges, s["t_s"], s["bytes_acked"])
+            mbps = np.diff(acked) * 8 / np.diff(edges) / 1e6
+            ymax = max(ymax, np.nanmax(mbps))
+            ax.plot(edges[:-1] + 0.5, mbps, color=style(r["algo"])["color"],
+                    linewidth=1.2, label=r["algo"])
+        ax.set_title(f"{server}  (min RTT {base_rtt(groups[server]):.0f} ms)",
+                     fontsize=8, loc="left")
+    for ax in axes.flat[len(servers):]:
+        ax.set_visible(False)
+    axes[0, 0].set_ylim(0, ymax * 1.1 if ymax > 0 else 1)
+    for ax in axes[:, 0]:
+        ax.set_ylabel("Mbit/s")
+    for ax in axes[-1, :]:
+        ax.set_xlabel("Time (s)")
+    handles = [plt.Line2D([], [], color=style(a)["color"], linewidth=1.5) for a in algos]
+    fig.legend(handles, algos, ncol=len(algos), loc="upper center",
+               bbox_to_anchor=(0.5, 0.975))
+    fig.suptitle(f"Goodput over time, repetition {rep + 1} (1-second averages)", y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    path = os.path.join(out_dir, "goodput_overview.pdf")
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -327,6 +374,7 @@ def main():
         print(plot_timeseries(server, server_runs, args.out))
         print(plot_scatter(server, server_runs, args.out))
     print(plot_comparison(groups, args.out))
+    print(plot_goodput_overview(groups, args.out))
     for p in write_summary(summarize(groups), args.out):
         print(p)
 
