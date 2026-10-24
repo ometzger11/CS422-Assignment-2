@@ -1,0 +1,14 @@
+| Server | Algo | Runs | Min | Median | Mean | p95 | Std of run means |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 103.146.200.98:5201 | cubic | 3 | 0.00 | 30.57 | 28.52 | 42.06 | 0.49 |
+| 169.150.202.193:5201 | cubic | 3 | 0.00 | 27.64 | 28.81 | 42.54 | 4.42 |
+| 169.150.252.2:5201 | cubic | 3 | 0.00 | 31.85 | 30.73 | 41.95 | 5.73 |
+| 37.19.206.20:5201 | cubic | 3 | 3.52 | 41.53 | 39.74 | 43.06 | 0.26 |
+| 96.45.40.45:30001 | cubic | 3 | 0.00 | 34.33 | 33.70 | 42.15 | 4.40 |
+| 96.45.44.87:30001 | cubic | 3 | 0.00 | 27.05 | 27.67 | 41.88 | 1.51 |
+| chi.speedtest.clouvider.net:5201 | cubic | 3 | 20.73 | 41.70 | 41.11 | 42.77 | 0.22 |
+| phx.speedtest.clouvider.net:5200 | cubic | 3 | 0.00 | 34.82 | 34.27 | 42.43 | 2.70 |
+| ping-ams1.online.net:5201 | cubic | 3 | 0.00 | 31.26 | 31.21 | 41.93 | 5.44 |
+| speedtest2.lightningfibre.net.uk:4000 | cubic | 3 | 0.61 | 37.97 | 35.43 | 42.92 | 2.91 |
+
+Goodput in Mbit/s, computed over all samples from all runs. Std of run means = spread of per-run mean goodput across repetitions.

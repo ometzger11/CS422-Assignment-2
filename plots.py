@@ -362,10 +362,20 @@ def main():
     ap.add_argument("--runs", default="runs.csv")
     ap.add_argument("--samples", default="samples.csv")
     ap.add_argument("--out", default="plots")
+    ap.add_argument("--algos", default=None,
+                    help="only plot these algorithms, comma-separated (e.g. cubic)")
+    ap.add_argument("--server", default=None,
+                    help="only plot servers whose name contains this text")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
     runs = load(args.runs, args.samples)
+    # Filters apply after the completeness check, so the same servers qualify
+    if args.algos:
+        keep = set(args.algos.split(","))
+        runs = {rid: r for rid, r in runs.items() if r["algo"] in keep}
+    if args.server:
+        runs = {rid: r for rid, r in runs.items() if args.server in r["label"]}
     if not runs:
         raise SystemExit("No successful runs with samples found.")
     groups = by_server(runs)
